@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PhishGuard AI | URL Phishing Detector</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+  <style>
+
+    .scan-stages { display:flex; gap:6px; flex-wrap:wrap; margin-top:14px; }
+    .stage-chip {
+      display:flex; align-items:center; gap:6px; font-size:11px; color:var(--muted);
+      padding:5px 11px; border-radius:20px; border:1px solid var(--surface-border);
+      background:var(--surface); transition:all .25s ease; font-family:inherit;
+    }
+    .stage-chip.active { border-color:var(--primary); color:var(--primary); background:rgba(110,168,254,.08); }
+    .stage-chip.done   { border-color:var(--accent);  color:var(--accent);  background:rgba(22,199,154,.08); }
+    .stage-chip.fail   { border-color:var(--danger);  color:var(--danger);  background:rgba(255,93,115,.08); }
+    .stage-dot {
+      width:6px; height:6px; border-radius:50%; background:currentColor; opacity:.55; flex-shrink:0;
+    }
+    .stage-chip.active .stage-dot { opacity:1; animation:pdot .7s ease infinite; }
+    .stage-chip.done   .stage-dot { opacity:1; }
+    @keyframes pdot { 0%,100%{transform:scale(1)} 50%{transform:scale(1.7)} }
+
+
+    .collapsible-header {
+      display:flex; align-items:center; gap:8px; background:none; border:none;
+      color:var(--muted); font-size:12px; cursor:pointer; padding:0; font-family:inherit;
+      font-weight:600; letter-spacing:.04em; text-transform:uppercase; transition:color .2s;
+    }
+    .collapsible-header:hover { color:var(--primary); }
+    .collapsible-header .chev { font-size:10px; transition:transform .3s; display:inline-block; }
+    .collapsible-header.open .chev { transform:rotate(180deg); }
+    .collapsible-body { max-height:0; overflow:hidden; transition:max-height .4s ease; }
+    .collapsible-body.open { max-height:600px; }
+    .section-divider { border-top:1px solid var(--surface-border); margin:14px 0; }
+
+    
+    .api-row { display:flex; flex-direction:column; gap:5px; margin-top:12px; }
+    .api-row label { font-size:11px; color:var(--muted); font-weight:700; letter-spacing:.05em; text-transform:uppercase; }
+    .api-field { display:flex; gap:8px; align-items:center; }
+    .api-field input {
+      flex:1; background:var(--surface-2); border:1px solid var(--surface-border);
+      border-radius:8px; padding:8px 12px; color:var(--text); font-size:12px;
+      font-family:monospace; outline:none; transition:border-color .2s;
+    }
+    .api-field input:focus { border-color:var(--primary); }
+    .api-field input::placeholder { opacity:.4; }
+    .api-pill {
+      font-size:10px; font-weight:700; padding:3px 9px; border-radius:10px;
+      white-space:nowrap; border:1px solid transparent; transition:all .2s;
+    }
+    .api-pill.idle    { color:var(--muted);    background:var(--surface); border-color:var(--surface-border); }
+    .api-pill.busy    { color:var(--warning);  background:rgba(255,183,77,.1); border-color:rgba(255,183,77,.3); }
+    .api-pill.clean   { color:var(--safe);     background:rgba(35,209,139,.1); border-color:rgba(35,209,139,.3); }
+    .api-pill.flagged { color:var(--danger);   background:rgba(255,93,115,.1); border-color:rgba(255,93,115,.3); }
+    .api-pill.error   { color:var(--warning);  background:rgba(255,183,77,.08); border-color:rgba(255,183,77,.2); }
+    .api-note { font-size:10.5px; color:var(--muted-2); margin-top:7px; line-height:1.55; }
+    .api-note a { color:var(--primary); text-decoration:none; }
+
+   
+    .batch-textarea {
+      width:100%; height:90px; margin-top:12px;
+      background:var(--surface-2); border:1px solid var(--surface-border);
+      border-radius:10px; padding:10px 14px; color:var(--text); font-size:12px;
+      font-family:monospace; resize:vertical; outline:none; transition:border-color .2s;
+    }
+    .batch-textarea:focus { border-color:var(--primary); }
+    .batch-results { margin-top:10px; display:flex; flex-direction:column; gap:5px; max-height:200px; overflow-y:auto; }
+    .batch-item {
+      display:flex; align-items:center; gap:8px; padding:7px 12px;
+      background:var(--surface-2); border-radius:8px; border:1px solid var(--surface-border); font-size:11.5px;
+    }
+    .batch-item .b-url { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .batch-item .b-pct { font-family:monospace; color:var(--muted); font-size:11px; }
+    .batch-item .b-badge {
+      font-size:10px; font-weight:700; padding:2px 8px; border-radius:10px; white-space:nowrap;
+    }
+    .b-badge.safe   { background:rgba(35,209,139,.15); color:var(--safe); }
+    .b-badge.warn   { background:rgba(255,183,77,.15);  color:var(--warning); }
+    .b-badge.danger { background:rgba(255,93,115,.15);  color:var(--danger); }
+    .batch-action-row { display:flex; gap:8px; margin-top:10px; }
+
+    
+    .threat-tags { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+    .ttag {
+      font-size:10.5px; font-weight:700; padding:3px 10px; border-radius:20px;
+    }
+    .ttag.red   { background:rgba(255,93,115,.15); color:var(--danger);  border:1px solid rgba(255,93,115,.3); }
+    .ttag.orange{ background:rgba(255,183,77,.15);  color:var(--warning); border:1px solid rgba(255,183,77,.3); }
+    .ttag.green { background:rgba(35,209,139,.1);   color:var(--safe);    border:1px solid rgba(35,209,139,.3); }
+    .ttag.blue  { background:rgba(110,168,254,.1);  color:var(--primary); border:1px solid rgba(110,168,254,.3); }
+
+   
+    .api-result-rows { display:flex; flex-direction:column; gap:5px; margin-top:10px; }
+    .api-result-row {
+      display:flex; align-items:center; gap:8px; padding:7px 12px;
+      background:var(--surface-2); border-radius:8px; border:1px solid var(--surface-border); font-size:12px;
+    }
+    .api-result-row .arl { color:var(--muted); flex:1; }
+    .api-result-row .arv { font-weight:700; }
+
+    
+    .export-bar { display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; }
+    .export-btn {
+      flex:1; min-width:100px; background:var(--surface-2);
+      border:1px solid var(--surface-border); color:var(--muted);
+      padding:8px 14px; border-radius:8px; font-size:12px; font-family:inherit;
+      font-weight:600; cursor:pointer; transition:all .2s;
+    }
+    .export-btn:hover { border-color:var(--primary); color:var(--primary); }
+    .export-btn:disabled { opacity:.4; cursor:not-allowed; }
+
+    
+    .confidence-row { display:flex; justify-content:space-between; font-size:11px; color:var(--muted); margin-top:10px; }
+    .conf-track { height:3px; background:var(--surface-border); border-radius:2px; margin-top:5px; overflow:hidden; }
+    .conf-fill  { height:100%; border-radius:2px; background:linear-gradient(90deg,var(--primary),var(--accent)); transition:width .6s ease; width:0%; }
+
+    
+    .reason-list li { padding-left:20px; position:relative; }
+    .reason-list li::before { position:absolute; left:2px; font-size:11px; }
+    .reason-list li.rl-danger::before  { content:"✕"; color:var(--danger); }
+    .reason-list li.rl-warning::before { content:"⚠"; color:var(--warning); font-size:10px; }
+    .reason-list li.rl-positive::before{ content:"✓"; color:var(--safe); }
+    .reason-list li.rl-info::before    { content:"i"; color:var(--primary); font-weight:800; font-size:9px; top:2px; }
+
+    
+    .clear-hist-btn {
+      background:none; border:1px solid var(--surface-border); color:var(--muted);
+      padding:4px 10px; border-radius:6px; font-size:11px; font-family:inherit;
+      cursor:pointer; transition:all .2s;
+    }
+    .clear-hist-btn:hover { border-color:var(--danger); color:var(--danger); }
+    .history-item { cursor:pointer; transition:border-color .2s; }
+    .history-item:hover { border-color:var(--primary) !important; }
+    .rescan-hint { font-size:10px; color:var(--muted-2); margin-top:3px; }
+
+    .safe-verified {
+      display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:700;
+      color:var(--safe); background:rgba(35,209,139,.1); border:1px solid rgba(35,209,139,.3);
+      padding:4px 12px; border-radius:20px; margin-top:6px;
+    }
+  
+    .batch-results::-webkit-scrollbar { width:4px; }
+    .batch-results::-webkit-scrollbar-thumb { background:var(--surface-border); border-radius:2px; }
+  </style>
+</head>
+<body>
+  <div class="bg-grid"></div>
+  <div class="bg-glow glow-1"></div>
+  <div class="bg-glow glow-2"></div>
+
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-icon">
+          <span class="shield-core"></span>
+        </div>
+        <div class="brand-text">
+          <h1>PhishGuard AI</h1>
+          <p>Smart URL Phishing Detection Interface</p>
+        </div>
+      </div>
+      <div class="topbar-actions">
+        <button class="icon-btn" id="themeToggle" type="button" aria-label="Toggle theme">
+          <span class="icon-sun">☀</span>
+          <span class="icon-moon">☾</span>
+        </button>
+      </div>
+    </header>
+
+    <main class="dashboard">
+      
+      <section class="hero panel glass">
+        <div class="hero-copy">
+          <span class="eyebrow">SECURITY ANALYSIS SYSTEM</span>
+          <h2>ML-based phishing &amp; threat detection for any URL.</h2>
+          <p>
+            Combines 23-point heuristic analysis, entropy &amp; brand-spoof detection,
+            typosquatting checks, and optional live threat intelligence APIs.
+          </p>
+          <div class="hero-stats">
+            <div class="stat-card">
+              <span class="stat-label">Detection Points</span>
+              <strong>23 Heuristic Signals</strong>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">Output</span>
+              <strong>Safe / Suspicious / Phishing</strong>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">Live APIs</span>
+              <strong>GSB &amp; VirusTotal Ready</strong>
+            </div>
+          </div>
+        </div>
+        <div class="hero-visual">
+          <div class="orbital-card">
+            <div class="orb-ring ring-1"></div>
+            <div class="orb-ring ring-2"></div>
+            <div class="orb-ring ring-3"></div>
+            <div class="orb-center"><span>URL</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="workspace">
+        <div class="left-column">
+
+       
+          <div class="panel glass scanner-panel">
+            <div class="panel-header">
+              <div>
+                <p class="panel-tag">SCAN CONSOLE</p>
+                <h3>URL Inspection</h3>
+              </div>
+              <div class="live-badge">
+                <span class="live-dot"></span>
+                <span>Live Engine v2</span>
+              </div>
+            </div>
+
+            <div class="input-wrap">
+              <label for="urlInput" class="field-label">Website URL</label>
+              <div class="url-field">
+                <span class="field-icon">🔗</span>
+                <input id="urlInput" type="text" placeholder="https://example.com/login"
+                  autocomplete="off" spellcheck="false" />
+                <button class="paste-btn" id="pasteBtn" type="button">Paste</button>
+              </div>
+              <p class="field-note" id="fieldNote">Tip: Enter full URL with http:// or https:// for best results.</p>
+            </div>
+
+            <div class="sample-row">
+              <button class="sample-chip" type="button" data-url="https://google.com">google.com</button>
+              <button class="sample-chip" type="button" data-url="http://secure-login-paypal-update.xyz">phishing-style 1</button>
+              <button class="sample-chip" type="button" data-url="http://192.168.0.10/account/verify">IP-based host</button>
+              <button class="sample-chip" type="button" data-url="https://github.com">github.com</button>
+              <button class="sample-chip" type="button" data-url="https://paypa1-secure-login.verify-account.info/login?redirect=http://evil.com">brand spoof</button>
+              <button class="sample-chip" type="button" data-url="https://bit.ly/3xyz4ab">shortener</button>
+            </div>
+
+            <div class="action-row">
+              <button class="primary-btn" id="scanBtn" type="button">
+                <span class="btn-shine"></span>
+                <span class="btn-text">Run Scan</span>
+              </button>
+              <button class="secondary-btn" id="clearBtn" type="button">Clear</button>
+              <button class="ghost-btn" id="randomBtn" type="button">Try Random</button>
+            </div>
+
+           
+            <div class="scan-progress-wrap">
+              <div class="scan-progress-meta">
+                <span>Scan Progress</span>
+                <span id="progressPercent">0%</span>
+              </div>
+              <div class="progress-track">
+                <div class="progress-fill" id="progressFill"></div>
+              </div>
+            </div>
+
+         
+            <div class="scan-stages" id="scanStages">
+              <div class="stage-chip" id="stg1"><span class="stage-dot"></span>URL Parse</div>
+              <div class="stage-chip" id="stg2"><span class="stage-dot"></span>Heuristics</div>
+              <div class="stage-chip" id="stg3"><span class="stage-dot"></span>Entropy</div>
+              <div class="stage-chip" id="stg4"><span class="stage-dot"></span>Brand/Typo</div>
+              <div class="stage-chip" id="stg5"><span class="stage-dot"></span>Deep Analysis</div>
+              <div class="stage-chip" id="stg6"><span class="stage-dot"></span>Threat APIs</div>
+            </div>
+
+          
+            <div class="section-divider"></div>
+            <button class="collapsible-header" id="apiToggle" type="button">
+              ⚙ API Threat Intelligence <span class="chev">▾</span>
+            </button>
+            <div class="collapsible-body" id="apiBody">
+              <div class="api-row">
+                <label>Google Safe Browsing Key</label>
+                <div class="api-field">
+                  <input type="password" id="gsbKey" placeholder="AIza..." autocomplete="off" />
+                  <span class="api-pill idle" id="gsbStatus">Idle</span>
+                </div>
+                <p class="api-note">
+                  Free key from <a href="https://developers.google.com/safe-browsing/v4/get-started" target="_blank">console.developers.google.com</a>.
+                  Checks against Google's live phishing &amp; malware database.
+                </p>
+              </div>
+              <div class="api-row">
+                <label>VirusTotal API Key</label>
+                <div class="api-field">
+                  <input type="password" id="vtKey" placeholder="64-char hex key..." autocomplete="off" />
+                  <span class="api-pill idle" id="vtStatus">Idle</span>
+                </div>
+                <p class="api-note">
+                  Free key from <a href="https://www.virustotal.com/gui/my-apikey" target="_blank">virustotal.com</a>.
+                  Scans URL against 90+ antivirus engines.
+                  Note: VT requires a backend proxy for production — CORS errors will be shown otherwise.
+                </p>
+              </div>
+            </div>
+
+          
+            <div class="section-divider"></div>
+            <button class="collapsible-header" id="batchToggle" type="button">
+              ⬡ Batch URL Scanner <span class="chev">▾</span>
+            </button>
+            <div class="collapsible-body" id="batchBody">
+              <textarea class="batch-textarea" id="batchInput"
+                placeholder="Paste one URL per line…&#10;https://google.com&#10;http://suspicious-site.xyz/login&#10;https://github.com"></textarea>
+              <div class="batch-action-row">
+                <button class="secondary-btn" id="batchScanBtn" type="button" style="flex:1">Scan All</button>
+                <button class="ghost-btn" id="batchClearBtn" type="button">Clear</button>
+              </div>
+              <div class="batch-results" id="batchResults"></div>
+            </div>
+          </div>
+
+         
+          <div class="panel glass result-panel">
+            <div class="panel-header">
+              <div>
+                <p class="panel-tag">ANALYSIS RESULT</p>
+                <h3>Detection Summary</h3>
+              </div>
+              <div class="status-pill neutral" id="statusPill">Awaiting Scan</div>
+            </div>
+
+            <div class="summary-grid">
+              <div class="summary-card large-card">
+                <span class="summary-label">Classification</span>
+                <h4 id="resultTitle">No result yet</h4>
+                <p id="resultSubtitle">Submit a URL to view scan output and explainable reasons.</p>
+                <div id="safeVerified"></div>
+                <div class="threat-tags" id="threatTags"></div>
+              </div>
+
+              <div class="summary-card">
+                <span class="summary-label">Risk Score</span>
+                <div class="score-wrap">
+                  <div class="score-circle" id="scoreCircle">
+                    <span id="riskValue">0%</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="summary-card">
+                <span class="summary-label">Protocol Check</span>
+                <strong id="protocolResult">—</strong>
+              </div>
+
+              <div class="summary-card">
+                <span class="summary-label">Domain Style</span>
+                <strong id="domainResult">—</strong>
+              </div>
+
+              <div class="summary-card">
+                <span class="summary-label">Entropy Score</span>
+                <strong id="entropyResult">—</strong>
+              </div>
+
+              <div class="summary-card">
+                <span class="summary-label">Brand Alert</span>
+                <strong id="brandResult">—</strong>
+              </div>
+            </div>
+
+          
+            <div class="confidence-row">
+              <span>Model Confidence</span>
+              <span id="confidenceLabel">—</span>
+            </div>
+            <div class="conf-track"><div class="conf-fill" id="confFill"></div></div>
+
+        
+            <div class="api-result-rows" id="apiResultRows"></div>
+
+        
+            <div class="reason-box" style="margin-top:14px;">
+              <div class="reason-header">
+                <h4>Reasoning Output</h4>
+                <button class="copy-btn" id="copyReportBtn" type="button">Copy Report</button>
+              </div>
+              <ul id="reasonList" class="reason-list">
+                <li>No analysis yet.</li>
+              </ul>
+            </div>
+
+          
+            <div class="export-bar">
+              <button class="export-btn" id="exportTxtBtn" type="button" disabled>⬇ Download .txt</button>
+              <button class="export-btn" id="exportJsonBtn" type="button" disabled>⬇ Download .json</button>
+            </div>
+          </div>
+        </div>
+
+    
+        <div class="right-column">
+          <div class="panel glass metrics-panel">
+            <div class="panel-header">
+              <div>
+                <p class="panel-tag">SECURITY METRICS</p>
+                <h3>Feature Signals</h3>
+              </div>
+            </div>
+            <div class="metric-stack">
+              <div class="metric-item">
+                <div class="metric-head"><span>URL Length Risk</span><strong id="metricLength">0</strong></div>
+                <div class="mini-bar"><div id="barLength"></div></div>
+              </div>
+              <div class="metric-item">
+                <div class="metric-head"><span>Special Char Risk</span><strong id="metricSpecial">0</strong></div>
+                <div class="mini-bar"><div id="barSpecial"></div></div>
+              </div>
+              <div class="metric-item">
+                <div class="metric-head"><span>Keyword Suspicion</span><strong id="metricKeyword">0</strong></div>
+                <div class="mini-bar"><div id="barKeyword"></div></div>
+              </div>
+              <div class="metric-item">
+                <div class="metric-head"><span>Subdomain Complexity</span><strong id="metricSubdomain">0</strong></div>
+                <div class="mini-bar"><div id="barSubdomain"></div></div>
+              </div>
+              <div class="metric-item">
+                <div class="metric-head"><span>Entropy Score</span><strong id="metricEntropy">0</strong></div>
+                <div class="mini-bar"><div id="barEntropy"></div></div>
+              </div>
+              <div class="metric-item">
+                <div class="metric-head"><span>Encoding Obfuscation</span><strong id="metricEncoding">0</strong></div>
+                <div class="mini-bar"><div id="barEncoding"></div></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel glass tips-panel">
+            <div class="panel-header">
+              <div>
+                <p class="panel-tag">USER GUIDANCE</p>
+                <h3>Quick Safety Tips</h3>
+              </div>
+            </div>
+            <div class="tips-list">
+              <div class="tip-card">
+                <span class="tip-icon">✓</span>
+                <div>
+                  <h4>Check HTTPS carefully</h4>
+                  <p>HTTPS encrypts traffic but scammers use it too. Look for the real domain name.</p>
+                </div>
+              </div>
+              <div class="tip-card">
+                <span class="tip-icon">!</span>
+                <div>
+                  <h4>Watch for brand spoofing</h4>
+                  <p>paypal-secure.xyz is NOT PayPal. The real domain is always paypal.com.</p>
+                </div>
+              </div>
+              <div class="tip-card">
+                <span class="tip-icon">#</span>
+                <div>
+                  <h4>Avoid URL shorteners</h4>
+                  <p>bit.ly, tinyurl.com and similar services hide the real destination URL.</p>
+                </div>
+              </div>
+              <div class="tip-card">
+                <span class="tip-icon">⚠</span>
+                <div>
+                  <h4>High entropy = suspicious</h4>
+                  <p>Random-looking domain names (e.g. xk3mf92.xyz) are often auto-generated by malware.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel glass history-panel">
+            <div class="panel-header">
+              <div>
+                <p class="panel-tag">RECENT ACTIVITY</p>
+                <h3>Scan History</h3>
+              </div>
+              <button class="clear-hist-btn" id="clearHistBtn" type="button">Clear</button>
+            </div>
+            <div class="history-list" id="historyList">
+              <div class="history-empty">No scans yet.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+<script  src="script.js">
+</script>
+</body>
+</html>
