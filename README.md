@@ -1,4 +1,4 @@
-# Phishing_detection_model
+# Phishing_detection_model beta v1.2
 PHISHING WEBSITE DETECTION SYSTEM
 (URL BASED MACHINE LEARNING MODEL)
 
