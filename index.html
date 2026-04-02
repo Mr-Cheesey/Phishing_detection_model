@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PhishGuard AI | URL Phishing Detector</title>
+  <title>PhishGuard | URL Phishing Detector</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
@@ -147,6 +147,51 @@
   
     .batch-results::-webkit-scrollbar { width:4px; }
     .batch-results::-webkit-scrollbar-thumb { background:var(--surface-border); border-radius:2px; }
+  
+
+    .explain-grid { display:grid; grid-template-columns:1.05fr .95fr; gap:12px; margin-top:14px; }
+    .subpanel {
+      background:var(--surface-2); border:1px solid var(--surface-border); border-radius:12px;
+      padding:12px 14px;
+    }
+    .subpanel h4 { margin:0 0 10px; font-size:13px; color:var(--text); }
+    .signal-list, .anatomy-list { display:flex; flex-direction:column; gap:8px; }
+    .signal-row, .anatomy-row {
+      display:flex; align-items:center; justify-content:space-between; gap:10px;
+      font-size:11.5px; padding:7px 10px; border-radius:8px; background:var(--surface);
+      border:1px solid var(--surface-border);
+    }
+    .signal-row strong, .anatomy-row code { font-size:11px; }
+    .signal-row code, .anatomy-row code { color:var(--muted); word-break:break-all; }
+    .signal-pill { font-size:10px; font-weight:700; padding:2px 8px; border-radius:999px; }
+    .signal-pill.danger { background:rgba(255,93,115,.14); color:var(--danger); }
+    .signal-pill.warning { background:rgba(255,183,77,.14); color:var(--warning); }
+    .signal-pill.info { background:rgba(110,168,254,.12); color:var(--primary); }
+    .signal-pill.positive { background:rgba(35,209,139,.12); color:var(--safe); }
+    .breakdown-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:12px; }
+    .break-card {
+      background:var(--surface); border:1px solid var(--surface-border); border-radius:12px; padding:10px;
+    }
+    .break-card span { display:block; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
+    .break-card strong { display:block; margin-top:4px; font-size:18px; }
+    .break-track { height:4px; background:var(--surface-border); border-radius:4px; overflow:hidden; margin-top:8px; }
+    .break-fill { height:100%; width:0%; border-radius:4px; transition:width .45s ease; background:linear-gradient(90deg,var(--primary),var(--accent)); }
+    .insight-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin-top:10px; }
+    .insight-card {
+      background:var(--surface-2); border:1px solid var(--surface-border); border-radius:12px; padding:12px;
+    }
+    .insight-card span { display:block; font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
+    .insight-card strong { display:block; margin-top:5px; font-size:18px; }
+    .muted-mini { font-size:10.5px; color:var(--muted-2); margin-top:5px; line-height:1.45; }
+    .batch-summary {
+      margin-top:10px; padding:8px 10px; border-radius:8px; background:var(--surface-2);
+      border:1px solid var(--surface-border); font-size:11px; color:var(--muted);
+    }
+    @media (max-width: 980px) {
+      .explain-grid, .insight-grid { grid-template-columns:1fr; }
+      .breakdown-grid { grid-template-columns:1fr; }
+    }
+
   </style>
 </head>
 <body>
@@ -161,7 +206,7 @@
           <span class="shield-core"></span>
         </div>
         <div class="brand-text">
-          <h1>PhishGuard AI</h1>
+          <h1>PhishGuard</h1>
           <p>Smart URL Phishing Detection Interface</p>
         </div>
       </div>
@@ -318,6 +363,7 @@
                 <button class="ghost-btn" id="batchClearBtn" type="button">Clear</button>
               </div>
               <div class="batch-results" id="batchResults"></div>
+              <div class="batch-summary" id="batchSummary">Batch summary will appear here after multi-URL scans.</div>
             </div>
           </div>
 
@@ -377,6 +423,49 @@
             </div>
             <div class="conf-track"><div class="conf-fill" id="confFill"></div></div>
 
+            <div class="breakdown-grid">
+              <div class="break-card">
+                <span>URL Risk</span>
+                <strong id="breakdownUrl">0%</strong>
+                <div class="break-track"><div class="break-fill" id="breakFillUrl"></div></div>
+              </div>
+              <div class="break-card">
+                <span>Domain Risk</span>
+                <strong id="breakdownDomain">0%</strong>
+                <div class="break-track"><div class="break-fill" id="breakFillDomain"></div></div>
+              </div>
+              <div class="break-card">
+                <span>SSL / Trust Risk</span>
+                <strong id="breakdownSsl">0%</strong>
+                <div class="break-track"><div class="break-fill" id="breakFillSsl"></div></div>
+              </div>
+              <div class="break-card">
+                <span>Content / Redirect Risk</span>
+                <strong id="breakdownContent">0%</strong>
+                <div class="break-track"><div class="break-fill" id="breakFillContent"></div></div>
+              </div>
+            </div>
+
+            <div class="explain-grid">
+              <div class="subpanel">
+                <h4>Top Influencing Signals</h4>
+                <div class="signal-list" id="topSignals">
+                  <div class="signal-row"><span>No scan yet.</span><code>—</code></div>
+                </div>
+              </div>
+              <div class="subpanel">
+                <h4>URL Anatomy</h4>
+                <div class="anatomy-list">
+                  <div class="anatomy-row"><span>Host</span><code id="anatomyHost">—</code></div>
+                  <div class="anatomy-row"><span>Base Domain</span><code id="anatomyBase">—</code></div>
+                  <div class="anatomy-row"><span>TLD</span><code id="anatomyTld">—</code></div>
+                  <div class="anatomy-row"><span>Path</span><code id="anatomyPath">—</code></div>
+                  <div class="anatomy-row"><span>Query</span><code id="anatomyQuery">—</code></div>
+                  <div class="anatomy-row"><span>Trust Memory</span><code id="anatomyVisited">No previous scans</code></div>
+                </div>
+              </div>
+            </div>
+
         
             <div class="api-result-rows" id="apiResultRows"></div>
 
@@ -432,6 +521,32 @@
               <div class="metric-item">
                 <div class="metric-head"><span>Encoding Obfuscation</span><strong id="metricEncoding">0</strong></div>
                 <div class="mini-bar"><div id="barEncoding"></div></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel glass">
+            <div class="panel-header">
+              <div>
+                <p class="panel-tag">PROTOTYPE INSIGHTS</p>
+                <h3>Deployment Readiness</h3>
+              </div>
+            </div>
+            <div class="insight-grid">
+              <div class="insight-card">
+                <span>Trust Memory</span>
+                <strong id="trustScore">0</strong>
+                <p class="muted-mini">Repeated safe scans increase local trust for known benign domains.</p>
+              </div>
+              <div class="insight-card">
+                <span>Scan Latency</span>
+                <strong id="decisionLatency">0 ms</strong>
+                <p class="muted-mini">Approximate client-side decision time for this prototype run.</p>
+              </div>
+              <div class="insight-card">
+                <span>Total Scans</span>
+                <strong id="scanCount">0</strong>
+                <p class="muted-mini">Persistent local counter showing prototype usage and evaluation volume.</p>
               </div>
             </div>
           </div>
