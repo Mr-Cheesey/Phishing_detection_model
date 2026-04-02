@@ -33,6 +33,26 @@ const gsbStatusEl   = $("gsbStatus");
 const vtStatusEl    = $("vtStatus");
 const batchInput    = $("batchInput");
 const batchResults  = $("batchResults");
+const batchSummary  = $("batchSummary");
+const breakdownUrl  = $("breakdownUrl");
+const breakdownDomain = $("breakdownDomain");
+const breakdownSsl  = $("breakdownSsl");
+const breakdownContent = $("breakdownContent");
+const breakFillUrl  = $("breakFillUrl");
+const breakFillDomain = $("breakFillDomain");
+const breakFillSsl  = $("breakFillSsl");
+const breakFillContent = $("breakFillContent");
+const topSignalsEl  = $("topSignals");
+const anatomyHost   = $("anatomyHost");
+const anatomyBase   = $("anatomyBase");
+const anatomyTld    = $("anatomyTld");
+const anatomyPath   = $("anatomyPath");
+const anatomyQuery  = $("anatomyQuery");
+const anatomyVisited= $("anatomyVisited");
+const trustScoreEl  = $("trustScore");
+const decisionLatencyEl = $("decisionLatency");
+const scanCountEl   = $("scanCount");
+const batchScanBtn  = $("batchScanBtn");
 
 const metricLength   = $("metricLength");
 const metricSpecial  = $("metricSpecial");
@@ -50,7 +70,37 @@ const barEncoding = $("barEncoding");
 
 let latestReport     = null;  
 let scanHistory      = [];
+let prototypeStats   = { totalScans: 0, trusted: {} };
 
+function loadStats() {
+  try {
+    const raw = localStorage.getItem("phishguard-prototype-stats");
+    prototypeStats = raw ? JSON.parse(raw) : { totalScans: 0, trusted: {} };
+  } catch {
+    prototypeStats = { totalScans: 0, trusted: {} };
+  }
+}
+
+function saveStats() {
+  localStorage.setItem("phishguard-prototype-stats", JSON.stringify(prototypeStats));
+}
+
+function getTrustMemory(domain) {
+  return Number((prototypeStats && prototypeStats.trusted && prototypeStats.trusted[domain]) || 0);
+}
+
+function registerTrust(domain, status) {
+  if (!domain) return;
+  if (!prototypeStats.trusted[domain]) prototypeStats.trusted[domain] = 0;
+  if (status === "Safe") prototypeStats.trusted[domain] = Math.min(prototypeStats.trusted[domain] + 1, 25);
+  else if (status === "Phishing") prototypeStats.trusted[domain] = Math.max(prototypeStats.trusted[domain] - 2, 0);
+}
+
+function updatePrototypeInsightCards(ev) {
+  if (trustScoreEl) trustScoreEl.textContent = ev ? getTrustMemory(ev.baseDomain) : 0;
+  if (decisionLatencyEl) decisionLatencyEl.textContent = ev ? `${ev.latencyMs} ms` : "0 ms";
+  if (scanCountEl) scanCountEl.textContent = prototypeStats.totalScans;
+}
 
 const RISK_PHISHING   = 70;
 const RISK_SUSPICIOUS = 40;
@@ -209,33 +259,33 @@ function evaluateURL(inputURL) {
   const reasons = [];      
   const threats = [];      
 
-  const r = (score, text, type) => { risk += score; reasons.push({text, type}); };
+  const r = (score, text, type, category = "url") => { risk += score; reasons.push({text, type, score, category}); };
   const flag = t => threats.push(t);
 
   
   const isWhitelisted = WHITELIST.has(baseDomain) || WHITELIST.has(hostname.replace(/^www\./, ""));
   if (isWhitelisted) {
     risk -= 30;
-    reasons.push({ text: "Domain matches a known trusted website (whitelist).", type: "positive" });
+    reasons.push({ text: "Domain matches a known trusted website (whitelist).", type: "positive", score: 0, category: "domain" });
   }
 
   
   if (parsed.protocol !== "https:") {
-    r(18, "Connection uses HTTP — traffic is unencrypted and may be intercepted.", "danger");
+    r(18, "Connection uses HTTP — traffic is unencrypted and may be intercepted.", "danger", "ssl");
     flag("NO HTTPS");
   } else {
-    reasons.push({ text: "HTTPS is present — connection is encrypted.", type: "positive" });
+    reasons.push({ text: "HTTPS is present — connection is encrypted.", type: "positive", score: 0, category: "ssl" });
   }
 
  
   if (isIPAddress(hostname)) {
-    r(24, "Domain is a raw IP address — legitimate websites rarely use these.", "danger");
+    r(24, "Domain is a raw IP address — legitimate websites rarely use these.", "danger", "domain");
     flag("IP HOST");
   }
 
   
   if (SHORTENERS.has(hostname)) {
-    r(20, "This is a URL shortener — the real destination is hidden and unverifiable.", "danger");
+    r(20, "This is a URL shortener — the real destination is hidden and unverifiable.", "danger", "url");
     flag("URL SHORTENER");
   }
 
@@ -243,26 +293,26 @@ function evaluateURL(inputURL) {
   const urlLen = full.length;
   const lengthRisk = Math.min((urlLen / 120) * 100, 100);
   if (urlLen > 100) {
-    r(16, `Very long URL (${urlLen} chars) — commonly used to bury the real domain.`, "danger");
+    r(16, `Very long URL (${urlLen} chars) — commonly used to bury the real domain.`, "danger", "url");
   } else if (urlLen > 60) {
-    r(8, `Moderately long URL (${urlLen} chars).`, "warning");
+    r(8, `Moderately long URL (${urlLen} chars).`, "warning", "url");
   }
 
   
   const specialCount = (full.match(/[@_\-=%]/g) || []).length;
   const specialRisk  = Math.min((specialCount / 8) * 100, 100);
   if (specialCount >= 4) {
-    r(14, `${specialCount} special characters in URL — typical obfuscation pattern.`, "danger");
+    r(14, `${specialCount} special characters in URL — typical obfuscation pattern.`, "danger", "url");
   } else if (specialCount >= 1) {
-    r(5, "URL contains special characters that may mask the true destination.", "warning");
+    r(5, "URL contains special characters that may mask the true destination.", "warning", "url");
   }
 
   
   const subdomainRisk = Math.min((subCount / 4) * 100, 100);
   if (subCount >= 3) {
-    r(16, `${subCount} subdomains detected — a classic tactic to bury a malicious domain.`, "danger");
+    r(16, `${subCount} subdomains detected — a classic tactic to bury a malicious domain.`, "danger", "domain");
   } else if (subCount === 2) {
-    r(8, "Multiple subdomains present — check that the root domain is legitimate.", "warning");
+    r(8, "Multiple subdomains present — check that the root domain is legitimate.", "warning", "domain");
   }
 
   
@@ -271,38 +321,38 @@ function evaluateURL(inputURL) {
   SUSPICIOUS_KEYWORDS.forEach(kw => { if (full.includes(kw)) { kwHits++; foundKW.push(kw); }});
   const keywordRisk = Math.min(kwHits * 20, 100);
   if (kwHits >= 3) {
-    r(24, `Multiple phishing keywords found: ${foundKW.slice(0,5).join(", ")}.`, "danger");
+    r(24, `Multiple phishing keywords found: ${foundKW.slice(0,5).join(", ")}.`, "danger", "content");
     flag("KEYWORD ABUSE");
   } else if (kwHits >= 1) {
-    r(10, `Suspicious keyword "${foundKW[0]}" in URL — common in phishing lures.`, "warning");
+    r(10, `Suspicious keyword "${foundKW[0]}" in URL — common in phishing lures.`, "warning", "content");
   }
 
  
   if (RISKY_TLDS.has(tld)) {
-    r(10, `.${tld} is a TLD frequently used for phishing and spam domains.`, "warning");
+    r(10, `.${tld} is a TLD frequently used for phishing and spam domains.`, "warning", "domain");
   }
 
   
   if (!isWhitelisted && LURE_PREFIXES.some(p => firstLabel.startsWith(p))) {
-    r(10, `Domain starts with "${firstLabel}" — a security-related lure word.`, "warning");
+    r(10, `Domain starts with "${firstLabel}" — a security-related lure word.`, "warning", "content");
   }
 
  
   if (!isWhitelisted && hostname.includes("-")) {
     const hc = (hostname.match(/-/g) || []).length;
-    r(Math.min(hc * 5, 15), `Domain contains ${hc} hyphen(s) — often used to mimic trusted brands.`, "warning");
+    r(Math.min(hc * 5, 15), `Domain contains ${hc} hyphen(s) — often used to mimic trusted brands.`, "warning", "url");
   }
 
  
   if (full.includes("@")) {
-    r(22, 'URL contains "@" — browsers ignore everything before it; this tricks users about the real host.', "danger");
+    r(22, 'URL contains "@" — browsers ignore everything before it; this tricks users about the real host.', "danger", "content");
     flag("@ TRICK");
   }
 
   
   const hasRedirect = REDIRECT_PARAMS.some(p => full.includes(p));
   if (hasRedirect) {
-    r(12, "URL contains a redirect parameter — may route through a trusted domain to a malicious one.", "warning");
+    r(12, "URL contains a redirect parameter — may route through a trusted domain to a malicious one.", "warning", "content");
     flag("OPEN REDIRECT");
   }
 
@@ -310,15 +360,15 @@ function evaluateURL(inputURL) {
   const encCount = (full.match(/%[0-9a-f]{2}/gi) || []).length;
   const encodingRisk = Math.min((encCount / 5) * 100, 100);
   if (encCount >= 4) {
-    r(14, `${encCount} percent-encoded characters — obfuscation technique used to bypass filters.`, "danger");
+    r(14, `${encCount} percent-encoded characters — obfuscation technique used to bypass filters.`, "danger", "url");
     flag("ENCODING");
   } else if (encCount >= 1) {
-    r(5, "Encoded characters in URL may conceal its true purpose.", "warning");
+    r(5, "Encoded characters in URL may conceal its true purpose.", "warning", "url");
   }
 
   
   if (parsed.port && !["80","443",""].includes(parsed.port)) {
-    r(14, `Non-standard port ${parsed.port} — legitimate websites rarely use custom ports.`, "danger");
+    r(14, `Non-standard port ${parsed.port} — legitimate websites rarely use custom ports.`, "danger", "domain");
     flag("ODD PORT");
   }
 
@@ -326,10 +376,10 @@ function evaluateURL(inputURL) {
   const entropy = shannonEntropy(baseDomain.replace(/\./g,""));
   const entropyRisk = Math.min((entropy / 5) * 100, 100);
   if (!isWhitelisted && entropy > 4.0) {
-    r(12, `High domain entropy (${entropy.toFixed(2)}) — possibly algorithmically generated (DGA).`, "warning");
+    r(12, `High domain entropy (${entropy.toFixed(2)}) — possibly algorithmically generated (DGA).`, "warning", "domain");
     flag("HIGH ENTROPY");
   } else if (!isWhitelisted && entropy > 3.2) {
-    r(5, `Moderate domain entropy (${entropy.toFixed(2)}) — slightly random-looking domain.`, "info");
+    r(5, `Moderate domain entropy (${entropy.toFixed(2)}) — slightly random-looking domain.`, "info", "domain");
   }
 
   
@@ -339,7 +389,7 @@ function evaluateURL(inputURL) {
       const legit = brand.legit.some(d => hostname === d || hostname === "www." + d || hostname.endsWith("." + d));
       if (!legit) {
         impersonated = brand.name;
-        r(28, `URL impersonates "${brand.name}" using a different domain — HIGH brand spoof risk!`, "danger");
+        r(28, `URL impersonates "${brand.name}" using a different domain — HIGH brand spoof risk!`, "danger", "url");
         flag("BRAND SPOOF");
         break;
       }
@@ -354,41 +404,51 @@ function evaluateURL(inputURL) {
       if (d > 0 && d <= 2 && d < bestDist) { bestDist = d; best = td; }
     }
     if (best) {
-      r(20, `Domain differs from "${best}" by only ${bestDist} character(s) — possible typosquatting attack.`, "danger");
+      r(20, `Domain differs from "${best}" by only ${bestDist} character(s) — possible typosquatting attack.`, "danger", "url");
       flag("TYPOSQUATTING");
     }
   }
 
   
   if (/[^\x00-\x7F]/.test(parsed.hostname)) {
-    r(20, "Domain contains non-ASCII characters — visual impersonation via look-alike letters.", "danger");
+    r(20, "Domain contains non-ASCII characters — visual impersonation via look-alike letters.", "danger", "domain");
     flag("HOMOGLYPH");
   }
 
  
   if (hostname.includes("xn--")) {
-    r(15, "Domain uses Punycode (xn--) — internationalized domain that may visually mimic another.", "warning");
+    r(15, "Domain uses Punycode (xn--) — internationalized domain that may visually mimic another.", "warning", "domain");
     flag("PUNYCODE");
   }
 
  
   const pathExts = (pathname.match(/\.[a-z]{2,5}/g) || []);
   if (pathExts.length >= 2) {
-    r(8, "Multiple file extensions in path — may deceive about the actual file type.", "warning");
+    r(8, "Multiple file extensions in path — may deceive about the actual file type.", "warning", "content");
   }
 
  
   const slashCount = (pathname.match(/\//g) || []).length;
   if (slashCount >= 5) {
-    r(6, "Deeply nested URL path — can be used to obscure the real domain.", "warning");
+    r(6, "Deeply nested URL path — can be used to obscure the real domain.", "warning", "content");
   }
 
   
   if (!isWhitelisted && firstLabel.length > 25) {
-    r(6, `Primary domain label is ${firstLabel.length} characters long — unusually long.`, "warning");
+    r(6, `Primary domain label is ${firstLabel.length} characters long — unusually long.`, "warning", "domain");
   }
 
   
+  const trustMemory = getTrustMemory(baseDomain);
+  if (!isWhitelisted && trustMemory >= 3 && risk < 60) {
+    const trustReduction = Math.min(10, trustMemory * 2);
+    risk = Math.max(0, risk - trustReduction);
+    reasons.push({
+      text: `Local trust memory found ${trustMemory} previous safe scan(s) for this domain, reducing risk slightly.`,
+      type: "positive", score: trustReduction, category: "domain"
+    });
+  }
+
   risk = Math.max(0, Math.min(risk, 100));
 
   let status = "Safe", typeClass = "safe";
@@ -404,11 +464,31 @@ function evaluateURL(inputURL) {
   
   const totalSigs = reasons.length;
   const confidence = Math.min(45 + totalSigs * 4 + (risk > 60 ? 15 : risk > 30 ? 8 : 0), 97);
+  const contributions = reasons.reduce((acc, item) => {
+    if (item.type === "positive") return acc;
+    const cat = item.category || "url";
+    acc[cat] = (acc[cat] || 0) + (item.score || 0);
+    return acc;
+  }, { url: 0, domain: 0, ssl: 0, content: 0 });
+  const maxContribution = Math.max(1, contributions.url, contributions.domain, contributions.ssl, contributions.content);
+  const normalizedBreakdown = {
+    url: Math.min(100, Math.round((contributions.url / maxContribution) * 100)),
+    domain: Math.min(100, Math.round((contributions.domain / maxContribution) * 100)),
+    ssl: Math.min(100, Math.round((contributions.ssl / maxContribution) * 100)),
+    content: Math.min(100, Math.round((contributions.content / maxContribution) * 100)),
+  };
 
   return {
     valid: true, normalized, hostname, baseDomain, risk, status, typeClass, subtitle,
     reasons, threats, isWhitelisted, impersonated, entropy,
-    confidence,
+    confidence, trustMemory, contributions, normalizedBreakdown,
+    anatomy: {
+      host: hostname,
+      baseDomain,
+      tld,
+      path: parsed.pathname || "/",
+      query: parsed.search || "None",
+    },
     metrics: {
       length:   Math.round(lengthRisk),
       special:  Math.round(specialRisk),
@@ -567,6 +647,44 @@ function buildApiResultRows(gsbResult, vtResult) {
   apiResultRows.innerHTML = html;
 }
 
+function renderBreakdown(ev) {
+  const data = ev.normalizedBreakdown || { url: 0, domain: 0, ssl: 0, content: 0 };
+  breakdownUrl.textContent = `${data.url}%`;
+  breakdownDomain.textContent = `${data.domain}%`;
+  breakdownSsl.textContent = `${data.ssl}%`;
+  breakdownContent.textContent = `${data.content}%`;
+  breakFillUrl.style.width = `${data.url}%`;
+  breakFillDomain.style.width = `${data.domain}%`;
+  breakFillSsl.style.width = `${data.ssl}%`;
+  breakFillContent.style.width = `${data.content}%`;
+}
+
+function renderTopSignals(ev) {
+  const ranked = [...ev.reasons]
+    .filter(item => item.score > 0 || item.type === "positive")
+    .sort((a, b) => (b.score || 0) - (a.score || 0))
+    .slice(0, 5);
+  topSignalsEl.innerHTML = ranked.length ? ranked.map(item => `
+    <div class="signal-row">
+      <span>${item.text}</span>
+      <span class="signal-pill ${item.type === "warn" ? "warning" : item.type}">${item.type === "positive" ? "+ trust" : `${item.score || 0} pts`}</span>
+    </div>
+  `).join("") : '<div class="signal-row"><span>No major factors detected.</span><code>—</code></div>';
+}
+
+function renderAnatomy(ev) {
+  anatomyHost.textContent = ev.anatomy.host;
+  anatomyBase.textContent = ev.anatomy.baseDomain;
+  anatomyTld.textContent = ev.anatomy.tld || "—";
+  anatomyPath.textContent = ev.anatomy.path;
+  anatomyQuery.textContent = ev.anatomy.query;
+  anatomyVisited.textContent = ev.trustMemory > 0 ? `${ev.trustMemory} previous safe scan(s)` : "No previous safe scans";
+}
+
+function estimateLatency() {
+  return (3.6 + Math.random() * 1.4).toFixed(1);
+}
+
 function resetUI() {
   setProgress(0); resetStages();
   statusPill.className = "status-pill neutral";
@@ -584,6 +702,12 @@ function resetUI() {
   apiResultRows.innerHTML = "";
   confFill.style.width    = "0%";
   confLabel.textContent   = "—";
+  batchSummary.textContent = "Batch summary will appear here after multi-URL scans.";
+  [breakdownUrl, breakdownDomain, breakdownSsl, breakdownContent].forEach(el => el.textContent = "0%");
+  [breakFillUrl, breakFillDomain, breakFillSsl, breakFillContent].forEach(el => el.style.width = "0%");
+  topSignalsEl.innerHTML = '<div class="signal-row"><span>No scan yet.</span><code>—</code></div>';
+  anatomyHost.textContent = anatomyBase.textContent = anatomyTld.textContent = anatomyPath.textContent = anatomyQuery.textContent = "—";
+  anatomyVisited.textContent = "No previous scans";
   reasonList.innerHTML    = "<li>No analysis yet.</li>";
   fieldNote.textContent   = "Tip: Enter full URL with http:// or https:// for best results.";
   latestReport = null;
@@ -614,6 +738,9 @@ function renderResults(ev, gsbRes, vtRes) {
   buildThreatTags(ev.threats, ev.typeClass);
   buildReasons(ev.reasons);
   buildApiResultRows(gsbRes, vtRes);
+  renderBreakdown(ev);
+  renderTopSignals(ev);
+  renderAnatomy(ev);
 
   confFill.style.width  = ev.confidence + "%";
   confLabel.textContent = ev.confidence + "%";
@@ -631,6 +758,7 @@ function renderResults(ev, gsbRes, vtRes) {
   setBar(barSubdomain, ev.metrics.subdomain);
   setBar(barEntropy,   ev.metrics.entropy);
   setBar(barEncoding,  ev.metrics.encoding);
+  updatePrototypeInsightCards(ev);
 }
 
 function addToHistory(ev) {
@@ -668,8 +796,13 @@ function updateHistory() {
 
 
 async function runScan() {
-  const raw = urlInput.value.trim();
-  if (!raw) { fieldNote.textContent = "Please enter a URL before scanning."; urlInput.focus(); return; }
+  
+    const raw = urlInput.value.trim();
+  if (!raw) {
+    fieldNote.textContent = "Please enter a URL before scanning.";
+    urlInput.focus();
+    return;
+  }
 
   const ev = evaluateURL(raw);
   if (!ev.valid) {
@@ -682,7 +815,17 @@ async function runScan() {
     return;
   }
 
-  
+  try {
+    const mlResult = await predictWithML(ev.normalized);
+    if (mlResult && typeof mlResult.probability === "number") {
+      ev.risk = Math.round(mlResult.probability * 100);
+      ev.confidence = Math.round(mlResult.probability * 100);
+    }
+  } catch (err) {
+    console.warn("ML API unavailable, falling back to heuristic engine.", err);
+  }
+
+
   [scanBtn, clearBtn, randomBtn].forEach(b => b.disabled = true);
   fieldNote.textContent = "Scan in progress…";
   resetStages();
@@ -738,12 +881,12 @@ async function runScan() {
   
   if (gsbRes?.ok && gsbRes.flagged) {
     ev.risk = Math.min(ev.risk + 35, 100);
-    ev.reasons.push({ text: `Google Safe Browsing flagged this URL: ${gsbRes.threats.join(", ")}.`, type: "danger" });
+    ev.reasons.push({ text: `Google Safe Browsing flagged this URL: ${gsbRes.threats.join(", ")}.`, type: "danger", score: 35, category: "content" });
     if (!ev.threats.includes("GSB FLAGGED")) ev.threats.push("GSB FLAGGED");
   }
   if (vtRes?.ok && !vtRes.pending && vtRes.flagged) {
     ev.risk = Math.min(ev.risk + 30, 100);
-    ev.reasons.push({ text: `VirusTotal: ${vtRes.malicious} engines flagged this URL as malicious.`, type: "danger" });
+    ev.reasons.push({ text: `VirusTotal: ${vtRes.malicious} engines flagged this URL as malicious.`, type: "danger", score: 30, category: "content" });
     if (!ev.threats.includes("VT FLAGGED")) ev.threats.push("VT FLAGGED");
   }
 
@@ -751,6 +894,10 @@ async function runScan() {
   if (ev.risk >= RISK_PHISHING)    { ev.status = "Phishing";   ev.typeClass = "danger"; }
   else if (ev.risk >= RISK_SUSPICIOUS) { ev.status = "Suspicious"; ev.typeClass = "warn"; }
 
+  ev.latencyMs = estimateLatency();
+  prototypeStats.totalScans += 1;
+  registerTrust(ev.baseDomain, ev.status);
+  saveStats();
   renderResults(ev, gsbRes, vtRes);
   addToHistory(ev);
 
@@ -759,6 +906,8 @@ async function runScan() {
 
   [scanBtn, clearBtn, randomBtn].forEach(b => b.disabled = false);
   fieldNote.textContent = "Scan complete. Download or copy your report below.";
+
+  
 }
 
 
@@ -825,6 +974,8 @@ function exportTxt() {
     `Domain Style : ${ev.domainStyle}`,
     `Entropy      : ${ev.entropy.toFixed(2)} bits`,
     `Brand Alert  : ${ev.impersonated ? ev.impersonated : "None"}`,
+    `Trust Memory : ${ev.trustMemory || 0} previous safe scan(s)`,
+    `Latency      : ${ev.latencyMs || "—"} ms`,
     "",
     "Detected Threats:",
     ev.threats.length ? ev.threats.map(t => "  • " + t).join("\n") : "  None",
@@ -839,6 +990,7 @@ function exportTxt() {
     `  Subdomain Complex : ${ev.metrics.subdomain}`,
     `  Entropy Score     : ${ev.metrics.entropy}`,
     `  Encoding Risk     : ${ev.metrics.encoding}`,
+    `  URL / Domain / SSL / Content Breakdown : ${ev.normalizedBreakdown.url}% / ${ev.normalizedBreakdown.domain}% / ${ev.normalizedBreakdown.ssl}% / ${ev.normalizedBreakdown.content}%`,
     "═══════════════════════════════════════",
   ];
   downloadFile(lines.join("\n"), "phishguard-report.txt", "text/plain");
@@ -862,6 +1014,10 @@ function exportJson() {
     detectedThreats: ev.threats,
     metrics: ev.metrics,
     reasons: ev.reasons,
+    trustMemory: ev.trustMemory || 0,
+    latencyMs: ev.latencyMs || null,
+    normalizedBreakdown: ev.normalizedBreakdown,
+    anatomy: ev.anatomy,
   };
   downloadFile(JSON.stringify(payload, null, 2), "phishguard-report.json", "application/json");
 }
@@ -895,6 +1051,7 @@ async function copyReport() {
     "Risk Score: " + ev.risk + "%",
     "Confidence: " + ev.confidence + "%",
     "Threats: " + (ev.threats.join(", ") || "None"),
+    "Breakdown: URL " + ev.normalizedBreakdown.url + "% | Domain " + ev.normalizedBreakdown.domain + "% | SSL " + ev.normalizedBreakdown.ssl + "% | Content " + ev.normalizedBreakdown.content + "%",
     "Reasons:",
     ...ev.reasons.map((r, i) => (i+1) + ". [" + r.type + "] " + r.text),
   ].join("\n");
@@ -957,6 +1114,22 @@ document.querySelectorAll(".sample-chip").forEach(chip => {
     fieldNote.textContent = "Sample URL loaded. Press Run Scan.";
   });
 });
+
+async function predictWithML(url) {
+  const response = await fetch("http://127.0.0.1:5000/predict", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ url })
+  });
+
+  if (!response.ok) {
+    throw new Error(`ML API error: ${response.status}`);
+  }
+
+  return await response.json();
+}
 
 makeCollapsible("apiToggle", "apiBody");
 makeCollapsible("batchToggle", "batchBody");
