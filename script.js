@@ -963,7 +963,7 @@ function exportTxt() {
   const ev = latestReport;
   const lines = [
     "═══════════════════════════════════════",
-    "  PhishGuard AI — Scan Report v2",
+    "  PhishGuard — Scan Report v2",
     "═══════════════════════════════════════",
     `URL          : ${ev.normalized}`,
     `Scanned At   : ${new Date().toLocaleString()}`,
@@ -1045,7 +1045,7 @@ async function copyReport() {
   if (!latestReport) return;
   const ev = latestReport;
   const text = [
-    "PhishGuard AI Report",
+    "PhishGuard Report",
     "URL: " + ev.normalized,
     "Classification: " + ev.status,
     "Risk Score: " + ev.risk + "%",
